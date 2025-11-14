@@ -8,6 +8,11 @@ import type {
   TurnStartedAction,
   ZoneTransferAction,
   PermanentTappedAction,
+  CardDrawnAction,
+  CardPlayedAction,
+  CardAttackedAction,
+  CardBlockedAction,
+  GameEndedAction,
 } from './types/game'
 
 type GreToClientEnvelope = {
@@ -28,6 +33,33 @@ type GreToClientMessage = {
   gameStateMessage?: GreGameStateMessage
 }
 
+type GreAction = {
+  seatId?: number
+  action?: {
+    actionType?: string
+    instanceId?: number
+    manaCost?: Array<{ color: string[]; count: number }>
+  }
+}
+
+type GreGameInfo = {
+  stage?: string
+  matchState?: string
+  results?: Array<{
+    scope?: string
+    result?: string
+    winningTeamId?: number
+    reason?: string
+  }>
+}
+
+type GrePlayer = {
+  systemSeatNumber?: number
+  status?: string
+  teamId?: number
+  lifeTotal?: number
+}
+
 type GreGameStateMessage = {
   type?: string
   gameStateId?: number
@@ -42,6 +74,9 @@ type GreGameStateMessage = {
   zones?: GreZone[]
   gameObjects?: GreGameObject[]
   annotations?: GreAnnotation[]
+  actions?: GreAction[]
+  gameInfo?: GreGameInfo
+  players?: GrePlayer[]
 }
 
 type GreZone = {
@@ -65,6 +100,8 @@ type GreGameObject = {
   subtypes?: string[]
   isTapped?: boolean
   name?: number
+  color?: string[]
+  superTypes?: string[]
 }
 
 type GreAnnotationDetail = {
@@ -102,6 +139,11 @@ export class GreGameTracker {
   private lastTurnInfo?: TurnInfoSnapshot
   private hasEmittedDeckState = false
   private hasEmittedOpeningHand = false
+  private lastHandSize = new Map<number, number>()
+  private lastHandCards = new Map<number, Set<number>>()
+  private lastBattlefieldCards = new Map<number, Set<number>>()
+  private lastTappedState = new Map<number, boolean>()
+  private lastDeclareAttackStep = false
 
   reset(): void {
     this.currentMatchId = undefined
@@ -110,6 +152,11 @@ export class GreGameTracker {
     this.lastTurnInfo = undefined
     this.hasEmittedDeckState = false
     this.hasEmittedOpeningHand = false
+    this.lastHandSize.clear()
+    this.lastHandCards.clear()
+    this.lastBattlefieldCards.clear()
+    this.lastTappedState.clear()
+    this.lastDeclareAttackStep = false
   }
 
   processRawLine(line: RawLogLine): GameAction[] {
@@ -191,6 +238,12 @@ export class GreGameTracker {
             if (handAction) {
               actions.push(handAction)
               this.hasEmittedOpeningHand = true
+              // Rastrear as cartas da mão inicial para evitar detectá-las como compradas
+              if (handAction.cards && this.localSeatId) {
+                const initialHand = new Set(handAction.cards.map((c) => c.instanceId))
+                this.lastHandCards.set(this.localSeatId, initialHand)
+                this.lastHandSize.set(this.localSeatId, initialHand.size)
+              }
             }
           }
         }
@@ -204,6 +257,28 @@ export class GreGameTracker {
             timestamp,
           )
           actions.push(...annotationActions)
+        }
+
+        // Detectar compras de cartas (Library -> Hand)
+        const drawActions = this.detectCardDraws(state, objectById, zoneById, timestamp)
+        actions.push(...drawActions)
+
+        // Detectar cartas jogadas (Hand -> Battlefield/Stack)
+        const playActions = this.detectCardPlays(state, objectById, zoneById, timestamp)
+        actions.push(...playActions)
+
+        // Detectar ataques
+        const attackActions = this.detectAttacks(state, objectById, zoneById, timestamp)
+        actions.push(...attackActions)
+
+        // Detectar bloqueios
+        const blockActions = this.detectBlocks(state, objectById, zoneById, timestamp)
+        actions.push(...blockActions)
+
+        // Detectar fim de jogo
+        const gameEnded = this.detectGameEnd(state, timestamp)
+        if (gameEnded) {
+          actions.push(gameEnded)
         }
       }
     }
@@ -425,6 +500,10 @@ export class GreGameTracker {
         const tapped = this.toPermanentTappedAction(ann, objectById, timestamp)
         if (tapped) {
           actions.push(tapped)
+          // Atualizar estado tapped para detecção de ataques
+          if (tapped.instanceId != null) {
+            this.lastTappedState.set(tapped.instanceId, tapped.isTapped)
+          }
         }
       }
     }
@@ -497,6 +576,292 @@ export class GreGameTracker {
       grpId: obj.grpId,
       ownerSeatId: obj.ownerSeatId,
       controllerSeatId: obj.controllerSeatId,
+      name: obj.name,
+      cardTypes: obj.cardTypes,
+      subtypes: obj.subtypes,
+      color: obj.color,
+    }
+  }
+
+  private detectCardDraws(
+    state: GreGameStateMessage,
+    objectById: Map<number, GreGameObject>,
+    zoneById: Map<number, GreZone>,
+    timestamp: number,
+  ): CardDrawnAction[] {
+    const actions: CardDrawnAction[] = []
+
+    for (const zone of state.zones ?? []) {
+      if (zone.type !== 'ZoneType_Hand' || !zone.ownerSeatId || !zone.objectInstanceIds) {
+        continue
+      }
+
+      const currentHand = new Set(zone.objectInstanceIds)
+      const lastHand = this.lastHandCards.get(zone.ownerSeatId) ?? new Set<number>()
+
+      // Encontrar cartas novas na mão (estão na mão atual mas não estavam antes)
+      for (const instanceId of currentHand) {
+        if (!lastHand.has(instanceId)) {
+          const obj = objectById.get(instanceId)
+          if (!obj) continue
+
+          // Verificar se veio da biblioteca através de ZoneTransfer
+          // Por enquanto, assumimos que qualquer carta nova na mão foi comprada
+          // (pode ser melhorado verificando annotations de ZoneTransfer)
+          actions.push({
+            kind: 'card_drawn',
+            timestamp,
+            seatId: zone.ownerSeatId,
+            instanceId: obj.instanceId,
+            grpId: obj.grpId,
+            card: this.toCardRef(obj),
+          })
+        }
+      }
+
+      // Atualizar estado da mão
+      this.lastHandCards.set(zone.ownerSeatId, currentHand)
+      this.lastHandSize.set(zone.ownerSeatId, currentHand.size)
+    }
+
+    return actions
+  }
+
+  private detectCardPlays(
+    state: GreGameStateMessage,
+    objectById: Map<number, GreGameObject>,
+    zoneById: Map<number, GreZone>,
+    timestamp: number,
+  ): CardPlayedAction[] {
+    const actions: CardPlayedAction[] = []
+
+    // Verificar annotations de ZoneTransfer para detectar cartas saindo da mão
+    for (const ann of state.annotations ?? []) {
+      if (!ann.type?.includes('AnnotationType_ZoneTransfer')) continue
+
+      const instanceId = ann.affectedIds?.[0]
+      if (instanceId == null) continue
+
+      const obj = objectById.get(instanceId)
+      if (!obj) continue
+
+      const details = this.detailsAsMap(ann.details)
+      const fromZoneId = details.get('zone_src')
+      const toZoneId = details.get('zone_dest')
+
+      const fromZone = typeof fromZoneId === 'number' ? zoneById.get(fromZoneId) : undefined
+      const toZone = typeof toZoneId === 'number' ? zoneById.get(toZoneId) : undefined
+
+      // Se saiu da mão e foi para o campo de batalha ou stack
+      if (
+        fromZone?.type === 'ZoneType_Hand' &&
+        (toZone?.type === 'ZoneType_Battlefield' || toZone?.type === 'ZoneType_Stack')
+      ) {
+        // Determinar se foi cast ou play baseado na categoria da annotation
+        const category = typeof details.get('category') === 'string' ? details.get('category') : undefined
+        const isPlay = category === 'PlayLand' || toZone?.type === 'ZoneType_Battlefield'
+        const isCast = category === 'CastSpell' || toZone?.type === 'ZoneType_Stack'
+
+        // Verificar se há uma action correspondente para obter manaCost
+        const actionInfo = this.getActionInfo(state, instanceId, obj)
+
+        actions.push({
+          kind: 'card_played',
+          timestamp,
+          seatId: obj.controllerSeatId ?? obj.ownerSeatId,
+          instanceId: obj.instanceId,
+          grpId: obj.grpId,
+          actionType: isCast ? 'cast' : isPlay ? 'play' : actionInfo.type,
+          manaCost: actionInfo.manaCost,
+          card: this.toCardRef(obj),
+        })
+      }
+    }
+
+    return actions
+  }
+
+  private getActionInfo(
+    state: GreGameStateMessage,
+    instanceId: number,
+    obj: GreGameObject,
+  ): { type: 'cast' | 'play'; manaCost?: Array<{ color: string[]; count: number }> } {
+    // Verificar se é uma land (geralmente jogada, não conjurada)
+    const isLand = obj.cardTypes?.includes('CardType_Land') ?? false
+
+    // Procurar pela action correspondente no gameStateMessage
+    if (state.actions) {
+      for (const actionEntry of state.actions) {
+        const action = actionEntry.action
+        if (!action || action.instanceId !== instanceId) continue
+
+        if (action.actionType === 'ActionType_Play') {
+          return { type: 'play' }
+        }
+
+        if (action.actionType === 'ActionType_Cast' && action.manaCost) {
+          return {
+            type: 'cast',
+            manaCost: action.manaCost.map((mc) => ({
+              color: mc.color || [],
+              count: mc.count || 0,
+            })),
+          }
+        }
+      }
+    }
+
+    // Fallback: usar heurística baseada no tipo da carta
+    if (isLand) {
+      return { type: 'play' }
+    }
+
+    return { type: 'cast' }
+  }
+
+  private detectAttacks(
+    state: GreGameStateMessage,
+    objectById: Map<number, GreGameObject>,
+    zoneById: Map<number, GreZone>,
+    timestamp: number,
+  ): CardAttackedAction[] {
+    const actions: CardAttackedAction[] = []
+    const isDeclareAttackStep = state.turnInfo?.step === 'Step_DeclareAttack'
+
+    // Detectar ataques: quando entramos no Step_DeclareAttack, permanentes que foram virados
+    // (tapped) provavelmente estão atacando
+    if (isDeclareAttackStep && !this.lastDeclareAttackStep) {
+      // Primeira vez entrando no Step_DeclareAttack neste turno
+      // Verificar quais permanentes foram virados recentemente
+      for (const obj of state.gameObjects ?? []) {
+        if (!obj.instanceId || obj.zoneId === undefined) continue
+
+        const zone = zoneById.get(obj.zoneId)
+        if (zone?.type !== 'ZoneType_Battlefield') continue
+
+        const wasTapped = this.lastTappedState.get(obj.instanceId) ?? false
+        const isNowTapped = obj.isTapped ?? false
+
+        // Se foi virado (não estava tapped, agora está), provavelmente está atacando
+        if (!wasTapped && isNowTapped) {
+          actions.push({
+            kind: 'card_attacked',
+            timestamp,
+            seatId: obj.controllerSeatId ?? obj.ownerSeatId,
+            instanceId: obj.instanceId,
+            grpId: obj.grpId,
+            card: this.toCardRef(obj),
+          })
+        }
+
+        // Atualizar estado tapped
+        this.lastTappedState.set(obj.instanceId, isNowTapped)
+      }
+    } else if (isDeclareAttackStep) {
+      // Continuando no Step_DeclareAttack - atualizar estados tapped
+      for (const obj of state.gameObjects ?? []) {
+        if (!obj.instanceId) continue
+        this.lastTappedState.set(obj.instanceId, obj.isTapped ?? false)
+      }
+    }
+
+    // Atualizar estado do battlefield
+    const battlefieldBySeat = new Map<number, Set<number>>()
+    for (const zone of state.zones ?? []) {
+      if (zone.type === 'ZoneType_Battlefield' && zone.objectInstanceIds && zone.ownerSeatId) {
+        const seatCards = new Set(zone.objectInstanceIds)
+        battlefieldBySeat.set(zone.ownerSeatId, seatCards)
+      }
+    }
+    for (const [seatId, cards] of battlefieldBySeat) {
+      this.lastBattlefieldCards.set(seatId, cards)
+    }
+
+    this.lastDeclareAttackStep = isDeclareAttackStep
+
+    return actions
+  }
+
+  private detectBlocks(
+    state: GreGameStateMessage,
+    objectById: Map<number, GreGameObject>,
+    zoneById: Map<number, GreZone>,
+    timestamp: number,
+  ): CardBlockedAction[] {
+    const actions: CardBlockedAction[] = []
+
+    // Detectar bloqueios durante Step_DeclareBlock
+    if (state.turnInfo?.step !== 'Step_DeclareBlock') {
+      return actions
+    }
+
+    // Por enquanto, vamos usar uma heurística simples:
+    // Se estamos no Step_DeclareBlock e há permanentes no campo de batalha,
+    // podemos inferir bloqueios através de annotations ou mudanças de estado
+    // Isso pode ser melhorado analisando annotations específicas de bloqueio
+
+    // TODO: Implementar detecção mais precisa de bloqueios quando tivermos
+    // mais exemplos do log mostrando como bloqueios aparecem
+
+    return actions
+  }
+
+  private detectGameEnd(
+    state: GreGameStateMessage,
+    timestamp: number,
+  ): GameEndedAction | null {
+    const gameInfo = state.gameInfo
+    if (!gameInfo) return null
+
+    // Verificar se o jogo terminou
+    const isGameOver =
+      gameInfo.stage === 'GameStage_GameOver' ||
+      gameInfo.matchState === 'MatchState_GameComplete' ||
+      gameInfo.matchState === 'MatchState_MatchComplete'
+
+    if (!isGameOver) return null
+
+    // Encontrar o time vencedor e o motivo
+    let winningTeamId: number | undefined
+    let reason: string | undefined
+
+    if (gameInfo.results && gameInfo.results.length > 0) {
+      // Procurar resultado do match primeiro, depois do game
+      const matchResult = gameInfo.results.find((r) => r.scope === 'MatchScope_Match')
+      const gameResult = gameInfo.results.find((r) => r.scope === 'MatchScope_Game')
+
+      const result = matchResult || gameResult
+      if (result) {
+        winningTeamId = result.winningTeamId
+        reason = result.reason
+      }
+    }
+
+    // Encontrar os seatIds do vencedor e perdedor
+    let winningSeatId: number | undefined
+    let losingSeatId: number | undefined
+
+    if (state.players && winningTeamId != null) {
+      for (const player of state.players) {
+        if (player.teamId === winningTeamId) {
+          winningSeatId = player.systemSeatNumber
+        } else if (
+          player.status === 'PlayerStatus_PendingLoss' ||
+          player.status === 'PlayerStatus_Lost'
+        ) {
+          losingSeatId = player.systemSeatNumber
+        }
+      }
+    }
+
+    return {
+      kind: 'game_ended',
+      timestamp,
+      winningTeamId,
+      winningSeatId,
+      losingSeatId,
+      reason,
+      matchState: gameInfo.matchState,
     }
   }
 

@@ -7,6 +7,10 @@ export type CardRef = {
   grpId?: GrpId
   ownerSeatId?: SeatId
   controllerSeatId?: SeatId
+  name?: number
+  cardTypes?: string[]
+  subtypes?: string[]
+  color?: string[]
 }
 
 export type MatchStartedAction = {
@@ -63,6 +67,60 @@ export type PermanentTappedAction = {
   isTapped: boolean
 }
 
+export type CardDrawnAction = {
+  kind: 'card_drawn'
+  timestamp: number
+  seatId?: SeatId
+  instanceId: InstanceId
+  grpId?: GrpId
+  card?: CardRef
+}
+
+export type CardPlayedAction = {
+  kind: 'card_played'
+  timestamp: number
+  seatId?: SeatId
+  instanceId: InstanceId
+  grpId?: GrpId
+  actionType: 'cast' | 'play'
+  manaCost?: Array<{ color: string[]; count: number }>
+  card?: CardRef
+}
+
+export type CardAttackedAction = {
+  kind: 'card_attacked'
+  timestamp: number
+  seatId?: SeatId
+  instanceId: InstanceId
+  grpId?: GrpId
+  targetSeatId?: SeatId
+  targetInstanceId?: InstanceId
+  card?: CardRef
+}
+
+export type CardBlockedAction = {
+  kind: 'card_blocked'
+  timestamp: number
+  attackerSeatId?: SeatId
+  attackerInstanceId: InstanceId
+  attackerGrpId?: GrpId
+  blockerSeatId?: SeatId
+  blockerInstanceId: InstanceId
+  blockerGrpId?: GrpId
+  attackerCard?: CardRef
+  blockerCard?: CardRef
+}
+
+export type GameEndedAction = {
+  kind: 'game_ended'
+  timestamp: number
+  winningTeamId?: number
+  winningSeatId?: SeatId
+  losingSeatId?: SeatId
+  reason?: string
+  matchState?: string
+}
+
 export type GameAction =
   | MatchStartedAction
   | DeckStateAction
@@ -70,4 +128,9 @@ export type GameAction =
   | TurnStartedAction
   | ZoneTransferAction
   | PermanentTappedAction
+  | CardDrawnAction
+  | CardPlayedAction
+  | CardAttackedAction
+  | CardBlockedAction
+  | GameEndedAction
 
