@@ -69,6 +69,9 @@ export default defineConfig(({ command }) => {
               outDir: path.join(distElectronRoot, 'preload'),
               rollupOptions: {
                 external: Object.keys('dependencies' in pkg ? pkg.dependencies : {}),
+                output: {
+                  entryFileNames: 'preload.mjs',
+                },
               },
             },
           },

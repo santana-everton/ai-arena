@@ -160,3 +160,145 @@ body {
   cursor: not-allowed;
 }
 
+.log-finder-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.log-finder-modal {
+  background: #1b1d27;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 800px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.log-finder-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.log-finder-header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.close-button {
+  background: none;
+  border: none;
+  color: #fdfdfd;
+  font-size: 2rem;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.close-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.log-finder-content {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.log-finder-section {
+  margin-bottom: 24px;
+}
+
+.log-finder-section:last-child {
+  margin-bottom: 0;
+}
+
+.log-finder-section h3 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+  color: #b9c1ff;
+}
+
+.log-finder-section input,
+.log-finder-section button {
+  padding: 0.75em 1em;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #fdfdfd;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+.log-finder-section input:focus {
+  outline: none;
+  border-color: #5a5ef5;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.log-finder-section button {
+  cursor: pointer;
+  font-weight: 500;
+  background: linear-gradient(135deg, #5a5ef5, #8f4fff);
+  border: none;
+}
+
+.log-finder-section button:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.log-finder-section button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.log-finder-results {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.log-finder-result {
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.log-finder-result:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: #5a5ef5;
+  transform: translateX(4px);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
