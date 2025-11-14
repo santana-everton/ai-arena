@@ -29,12 +29,23 @@ export type InterpretedEvent = {
   rpcCall?: RpcCall
 }
 
+export type GameAction = {
+  kind: string
+  timestamp: number
+  // Campos adicionais dependem do tipo de ação.
+  // O parser no processo principal do Electron preenche esses dados.
+  // Mantemos como any para flexibilidade neste esboço.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any
+}
+
 export type MtgaBridge = {
   onLogLine: (callback: (line: string) => void) => ListenerDisposer
   onEvent: (callback: (event: MtgaEvent | null) => void) => ListenerDisposer
   onStatus: (callback: (status: LogStatus) => void) => ListenerDisposer
   onRpcCall: (callback: (rpcCall: RpcCall) => void) => ListenerDisposer
   onInterpretedEvent: (callback: (event: InterpretedEvent) => void) => ListenerDisposer
+  onGameAction: (callback: (action: GameAction) => void) => ListenerDisposer
   getLogPath: () => Promise<string>
   sendSnapshot: (snapshot: MtgaSnapshot) => Promise<{ receivedAt: number }>
   searchLogs: (searchTerms?: string[]) => Promise<LogSearchResult[]>

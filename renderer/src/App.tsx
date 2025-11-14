@@ -1,14 +1,14 @@
 import { useCallback, useState, useEffect } from 'react'
 import Header from './components/Header'
-import LogRawView from './components/LogRawView'
 import EventsView from './components/EventsView'
 import RpcView from './components/RpcView'
 import LogFinder from './components/LogFinder'
+import GameActionsView from './components/GameActionsView'
 import { useLogsStore } from './state/useLogsStore'
 import type { RpcCall, InterpretedEvent } from './types/global'
 
 export default function App() {
-  const { rawLines, events, status, logPath, sendSnapshot } = useLogsStore()
+  const { events, gameActions, status, logPath, sendSnapshot } = useLogsStore()
   const [sendingSnapshot, setSendingSnapshot] = useState(false)
   const [showLogFinder, setShowLogFinder] = useState(false)
   const [rpcCalls, setRpcCalls] = useState<RpcCall[]>([])
@@ -78,8 +78,8 @@ export default function App() {
 
       <div className="panes">
         <section className="pane">
-          <h2>Log bruto</h2>
-          <LogRawView lines={rawLines} />
+          <h2>Ações de jogo</h2>
+          <GameActionsView actions={gameActions} />
         </section>
 
         <section className="pane">

@@ -33,6 +33,9 @@ const mtgaBridge = {
   onInterpretedEvent(callback: (event: any) => void) {
     return createListener<any>('mtga:interpreted-event', callback)
   },
+  onGameAction(callback: (action: any) => void) {
+    return createListener<any>('mtga:game-action', callback)
+  },
   getLogPath() {
     return ipcRenderer.invoke(IPC_CHANNELS.getLogPath) as Promise<string>
   },

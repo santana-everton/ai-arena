@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { LogStatus, MtgaEvent } from '../types/mtga'
+import type { GameAction } from '../types/global'
 
 const MAX_LINES = 500
 const MAX_EVENTS = 200
+const MAX_GAME_ACTIONS = 500
 
 export function useLogsStore() {
   const [rawLines, setRawLines] = useState<string[]>([])
   const [events, setEvents] = useState<MtgaEvent[]>([])
+  const [gameActions, setGameActions] = useState<GameAction[]>([])
   const [status, setStatus] = useState<LogStatus | undefined>()
   const [logPath, setLogPath] = useState<string | null>(null)
 
@@ -41,6 +44,10 @@ export function useLogsStore() {
       setEvents((prev) => [...prev.slice(-MAX_EVENTS + 1), event])
     })
 
+    const disposeGameAction = bridge.onGameAction((action) => {
+      setGameActions((prev) => [...prev.slice(-MAX_GAME_ACTIONS + 1), action])
+    })
+
     const disposeStatus = bridge.onStatus((payload) => {
       setStatus(payload)
     })
@@ -48,6 +55,7 @@ export function useLogsStore() {
     return () => {
       disposeLog?.()
       disposeEvent?.()
+      disposeGameAction?.()
       disposeStatus?.()
     }
   }, [])
@@ -67,6 +75,7 @@ export function useLogsStore() {
   return {
     rawLines,
     events,
+    gameActions,
     status,
     logPath,
     sendSnapshot,

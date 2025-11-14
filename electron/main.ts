@@ -11,6 +11,7 @@ import { processLogLine, resetRpcReconstructor } from './rpcReconstructor'
 import { interpretRpc } from './rpcInterpreters'
 import { LogWatcherManager } from './logWatcherManager'
 import type { RpcCall, InterpretedEvent } from './types/log'
+import { GreGameTracker } from './greGameTracker'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -35,6 +36,7 @@ if (!app.requestSingleInstanceLock()) {
 let win: BrowserWindow | null = null
 let logWatcherManager: LogWatcherManager | null = null
 let lineIndex = 0
+const greGameTracker = new GreGameTracker()
 
 // Caminho do preload - usar caminho absoluto
 const preload = path.resolve(__dirname, '../preload/preload.mjs')
@@ -56,6 +58,7 @@ const startLogWatcherManager = () => {
   // Resetar contador e reconstrutor de RPCs
   lineIndex = 0
   resetRpcReconstructor()
+  greGameTracker.reset()
 
   // Criar novo gerenciador
   logWatcherManager = new LogWatcherManager({
@@ -68,6 +71,12 @@ const startLogWatcherManager = () => {
 
       // Parsear linha bruta
       const rawLogLine = parseRawLine(line, lineIndex)
+
+       // Interpretar mensagens GRE em ações de partida
+       const gameActions = greGameTracker.processRawLine(rawLogLine)
+       for (const action of gameActions) {
+         broadcast('mtga:game-action', action)
+       }
 
       // Processar RPCs
       const completedRpcCalls = processLogLine(rawLogLine)
